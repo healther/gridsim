@@ -4,7 +4,7 @@ from pprint import pprint
 
 from data.energy_charts import acquire_data
 from grid.grid import run_simulation, Compensate
-from grid.report import analyse, find_shortfalls
+from grid.report import analyse, find_shortfalls, find_compensate_time
 from utils.plot import plot_shortfalls, plot_shortfalls_timecourse
 
 
@@ -26,7 +26,7 @@ def main():
 	data, capacity = acquire_data(use_sources, '..')
 
 	st_pow = 100.
-	m_cap = 1250.
+	m_cap = 0.
 	solarpower = 200.
 	wind_on_power = 130.
 	wind_of_power = 60.
@@ -40,9 +40,11 @@ def main():
 	                        nsteps=1000000,
 	                        simstart=datetime.datetime(year=2022, month=1, day=1))
 	shortfalls = find_shortfalls(times, others)
-	pprint(
-		shortfalls
-	)
+	for s in shortfalls:
+		print(find_compensate_time(s, 2000., 20.))
+	# pprint(
+	# 	shortfalls
+	# )
 	print(len(shortfalls))
 	# plot_shortfalls(shortfalls)
 
@@ -55,8 +57,11 @@ def main():
 	res['storage_power'] = st_pow
 	res['storage_capacity'] = m_cap
 	print(res)
+	return shortfalls
 
+	print(find_minimal_compensate(shortfalls, m_cap))
 
+	return
 	compensates = [Compensate(s, 3) for s in find_shortfalls(times, others)]
 	pprint(compensates)
 	times, storages, loads, production, battery, others = run_simulation(

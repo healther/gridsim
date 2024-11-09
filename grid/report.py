@@ -1,4 +1,6 @@
 import numpy as np
+from collections import Sequence
+import datetime
 
 
 class ShortFall:
@@ -27,7 +29,71 @@ class ShortFall:
         return np.max(self.deficits) / 1000.
 
     def __repr__(self):
+        print(self.start, self.get_duration_in_hours())
         return f"Start: {self.start}\n  Duration: {self.get_duration_in_hours():.2f} hours\n  Total: {self.get_deficit_in_GWh():.1f} GWh\n  Peak: {self.get_peak_deficit_in_GW():.1f} GW"
+
+
+class ShortFallSeries(Sequence):
+    def __init__(self, shortfalls):
+        self.shortfalls = shortfalls
+
+    def get_duration_in_hours(self):
+        return np.sum(s.get_duration_in_hours() for s in self.shortfalls)
+
+    def get_deficit_in_GWh(self):
+        return np.sum(s.get_deficit_in_GWh() for s in self.shortfalls)
+
+    def get_peak_deficit_in_GW(self):
+        return np.max([s.get_peak_deficit_in_GW() for s in self.shortfalls])
+
+    def summary(self):
+        return f"Duration: {self.get_duration_in_hours():.2f} hours\n  Total: {self.get_deficit_in_GWh():.1f} GWh\n  Peak: {self.get_peak_deficit_in_GW():.1f} GW"
+
+    def __repr__(self):
+        return "\n".join(str(s) for s in self.shortfalls) + "\n\n" + self.summary()
+
+    def __len__(self):
+        return len(self.shortfalls)
+
+    def __getitem__(self, index):
+        return self.shortfalls[index]
+
+
+
+
+def find_compensate_time(shortfall, m_cap, reserve_power):
+    # Assumptions:  Battery is fully available before any shortfall, i.e. we can start a long
+    #               time before and end with a fully charged battery at the start of the
+    #               shortfall
+    #               It is sufficient to end with an exactly empty battery at the end of each
+    #               shortfall
+    # If the battery capacity / reserve power combination does not allow for the compensation
+    # of the shortfall a ValueError is raised
+    deficits = np.array(shortfall.deficits)
+    cum_deficit = np.cumsum(deficits / 1000. / 4.) # make it GWh
+    time_needed = cum_deficit[-1] / reserve_power # in hours
+    latest_start = shortfall.end - datetime.timedelta(hours=time_needed)
+    quarters_needed = int(np.ceil(time_needed * 4.))
+    if quarters_needed < len(shortfall.deficits):
+        reserve_generated = np.zeros_like(deficits)
+        reserve_generated[:quarters_needed] = reserve_power / 4.
+        reserve_generated = np.cumsum(reserve_generated)
+    else:
+        reserve_generated = np.cumsum([reserve_power / 4. for _ in range(quarters_needed)])
+    if len(reserve_generated) > len(deficits):
+        reserve_generated = reserve_generated[-len(deficits):]
+    print(reserve_generated[-1], deficits[-1])
+    quarter_shifts = 0
+    while (reserve_generated < cum_deficit).any():
+        reserve_generated[:-1] = reserve_generated[1:]
+        quarter_shifts += 1
+
+    print(max(reserve_generated - cum_deficit))
+    if max(reserve_generated - cum_deficit) < m_cap:
+        return quarters_needed / 4., quarter_shifts
+
+    raise ValueError
+    return -1, -1
 
 
 def find_shortfalls(times, others):
@@ -45,7 +111,7 @@ def find_shortfalls(times, others):
                 is_shortfall = False
                 new_shortfall.set_end(t)
                 shortfalls.append(new_shortfall)
-    return shortfalls
+    return ShortFallSeries(shortfalls)
 
 
 def report(storages, loads, production, battery, others, last=None):
