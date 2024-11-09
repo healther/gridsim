@@ -5,6 +5,9 @@ from scipy.interpolate import interp1d
 from grid.capacity import PowerCapacity
 
 
+from line_profiler import profile
+
+
 @functools.lru_cache(maxsize=1000, typed=False)
 def battery_interaction(
     current_load,
@@ -55,29 +58,44 @@ def battery_interaction(
     return current_storage, battery, other
 
 
-def get_production(t, observed_data, sources, capacity):
+class Compensate:
+    def __init__(self, shortfall, stretch_factor=4):
+        self.end = shortfall.end - datetime.timedelta(hours=4)
+        self.start = self.end - datetime.timedelta(hours=24 + shortfall.get_duration_in_hours()*stretch_factor)
+        # self.value = shortfall.get_average_deficit_in_GW() / stretch_factor * 1.15
+        self.value = shortfall.get_peak_deficit_in_GW() / stretch_factor
+
+    @functools.lru_cache(maxsize=1000)
+    def get_value(self, t):
+        if t < self.start or t > self.end:
+            return 0.
+        return self.value * 1000.
+
+    def __repr__(self):
+        return f"Start: {self.start}\n  End: {self.end}\n  Value: {self.value:.1f} GW"
+
+
+@profile
+def get_production(t, observed_data, sources, capacity, compensates, MAX_COMP=10000.):
     production = 0.0
 
     for s in sources:
         scale_factor = capacity.get_scale_factor(s, t)
         production += observed_data[s][t] * scale_factor
 
+    comp_prod = 0.
+    for c in compensates:
+        comp_prod += c.get_value(t)
+    comp_prod = min(comp_prod, MAX_COMP)
+
+    production += comp_prod
+
     return production
-    # sum(observed_data[s][t] for s in sources)
 
 
-def get_obs_capacity_fcts(observed_capacity):
-    obs_caps = {}
-    for k, v in observed_capacity.items():
-        days = sorted(v.keys())
-        values = [v[d] for d in days]
-        days = [d.timestamp() for d in days]
-        obs_caps[k] = interp1d(days, values, fill_value="extrapolate")
-    return obs_caps
-
-
+@profile
 def run_simulation(
-    historic_data, historic_capacity, grid_configuration, nsteps=100, simstart=None
+    historic_data, historic_capacity, grid_configuration, nsteps=100, simstart=None, compensates=[]
 ):
     """Simulate power generation for some grid_configuration
 
@@ -111,6 +129,7 @@ def run_simulation(
                 historic_data,
                 sources,
                 capacity,
+                compensates,
             )
         )
 
@@ -132,30 +151,8 @@ def run_simulation(
     return times, storages, loads, production, battery, others
 
 
-def add_reserve_times(others, start_extra=-4 * 24 * 7):
-    lack_of_capacity = []
-    extra_needed = False
-    cur_start = None
-    for i, o in enumerate(others):
-        if extra_needed:
-            if o == 0:
-                extra_needed = False
-                duration = i - cur_start
+def get_compensate(times, storages, loads, production, battery, others):
+    compensates = [Compensate(s) for s in find_shortfalls(times, others)]
+    return compensates
 
-                next_start = cur_start + start_extra
-                if next_start < 0:
-                    next_start = 0
-                try:
-                    last_end = lack_of_capacity[-1][1]
-                except IndexError:
-                    last_end = None
-                if last_end and next_start < last_end:
-                    lack_of_capacity[-1] = (lack_of_capacity[-1][0], i)
-                else:
-                    lack_of_capacity.append((next_start, i))
-        else:
-            if o > 0:
-                cur_start = i
-                extra_needed = True
 
-    return lack_of_capacity

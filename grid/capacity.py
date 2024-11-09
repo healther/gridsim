@@ -1,4 +1,5 @@
 import numpy as np
+import functools
 
 
 class PowerCapacity:
@@ -30,6 +31,7 @@ class PowerCapacity:
         # TODO: Gracefully deal with earlier times
         return self.historic[key]["values"][ind-1]
 
+    @functools.lru_cache(maxsize=1000, typed=False)
     def get_scale_factor(self, key, t):
         try:
             return self.simulated[key] / self.get_installed_capacity(key, t)
