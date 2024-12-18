@@ -123,6 +123,7 @@ class HistoricData:
 		self.power = d['power']
 
 	def prepare(self, keys):
+		# TODO: Rework this to directly provide the iterator output and make the api_calls correctly invalidate the preparation
 		# keys is a list of (new_key, list of old keys) tuples which defines
 		# the collection and later iteration of the data
 
@@ -138,7 +139,6 @@ class HistoricData:
 				month, year = t.split('.')
 				production_times.append(datetime.datetime(int(year), int(month), 1).timestamp())
 			except ValueError:
-				print(datetime.datetime(int(t), 1, 1))
 				production_times.append(datetime.datetime(int(t), 1, 1).timestamp())
 		self._prepared_data['production']['start_times'] = production_times
 		self._prepared_data['production']['types'] = {
@@ -148,10 +148,8 @@ class HistoricData:
 		for k, v in self.production_capacity['production_types'].items():
 			for klist in keys:
 				new_key = klist[0]
-				print(k, new_key, klist)
 				old_values = self._prepared_data['production']['types'][new_key]
 				if k in klist:
-					print(k)
 					new_values = [ov + nv if nv is not None else 0. for ov, nv in zip(old_values, v)]
 					self._prepared_data['production']['types'][new_key] = new_values
 
@@ -161,7 +159,6 @@ class HistoricData:
 			for k in self._keys
 		}
 		for k, v in self.power['production_types'].items():
-			print(k)
 			for klist in keys:
 				new_key = klist[0]
 				old_values = self._prepared_data['power']['types'][new_key]
@@ -178,7 +175,6 @@ class HistoricData:
 
 		first_power_time = self._prepared_data['power']['time'][0]
 		production_idx = bisect.bisect(self._prepared_data['production']['start_times'], first_power_time) - 1
-		print(first_power_time, self._prepared_data['production']['start_times'][production_idx])
 		if production_idx == len(self._prepared_data['production']['start_times']):
 			log.info("Simulation time starts after the last production capacity time. Will not change factors over time!")
 			production_idx = -1
@@ -186,20 +182,29 @@ class HistoricData:
 			next_production_time = datetime.datetime.now().timestamp() + 84600*365*10
 		else:
 			next_production_time = self._prepared_data['production']['start_times'][production_idx+1]
+		out_capacity = []
+		for k in self._keys:
+			out_capacity += [self._prepared_data['production']['types'][k][production_idx]]
+
 		for i, t in enumerate(self._prepared_data['power']['time']):
 			if t > next_production_time:
 				production_idx += 1
 				next_production_time = self._prepared_data['production']['start_times'][production_idx+1]
-			out = [t]
+				out_capacity = []
+				for k in self._keys:
+					out_capacity += [self._prepared_data['production']['types'][k][production_idx]]
+			out_power = []
 			for k in self._keys:
-				out += [self._prepared_data['power']['types'][k][i], self._prepared_data['production']['types'][k][production_idx]]
-			yield out
+				out_power += [self._prepared_data['power']['types'][k][i]]
+			yield t, out_power, out_capacity
 
 	def keys(self):
-		out = ['timestamp']
+		out_power = []
+		out_capacity = []
 		for k in self._keys:
-			out += ['prod_'+self._prepared_data['power']['types'][k][i],
-					'capa_'+self._prepared_data['production']['types'][k][production_idx]]
+			out_power += [k]
+			out_capacity += [k]
+		return 'timestamp', out_power, out_capacity
 
 
 def merge(old, new, timekey='time'):
