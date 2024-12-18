@@ -75,7 +75,7 @@ class Compensate:
         return f"Start: {self.start}\n  End: {self.end}\n  Value: {self.value:.1f} GW"
 
 
-@profile
+# @profile
 def get_production(t, observed_data, sources, capacity, compensates, MAX_COMP=10000.):
     production = 0.0
 
@@ -91,6 +91,55 @@ def get_production(t, observed_data, sources, capacity, compensates, MAX_COMP=10
     production += comp_prod
 
     return production
+
+
+def get_scaled_production(historic_production, historic_capacity, simulated_capacity):
+    total_prod = 0.
+    for hp, hc, sc in zip(historic_production, historic_capacity, simulated_capacity):
+        total_prod += hp * sc / hc
+    return total_prod
+
+
+@profile
+def simulate(historic_data, renewable_capacity):
+    pd = PowerData()
+
+    for t, h_prod, h_cap in historic_data:
+        load = h_prod[-1]
+        s_prod = simulated_production = get_scaled_production(
+            h_prod[:-1], h_cap[:-1], renewable_capacity
+        )
+        pd.add(t, load, s_prod)
+
+    return pd
+
+
+class PowerData:
+    def __init__(self):
+        self.times = []
+        self.loads = []
+        self.productions = []
+        self._deficits = None
+
+    def add(self, t, l, p):
+        self.times.append(t)
+        self.loads.append(l)
+        self.productions.append(p)
+        self._deficits = None
+
+    def prepare_deficits(self):
+        # Move this to add?
+        self._deficits = []
+        for t, l, p in zip(self.times, self.loads, self.productions):
+            if l - p > 0:
+                self._deficits.append((t, l - p))
+
+    def return_deficits(self):
+        if self._deficits:
+            return self._deficits
+
+        self.prepare_deficits()
+        return self._deficits
 
 
 @profile
