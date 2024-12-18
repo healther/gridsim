@@ -1,11 +1,66 @@
 
 from collections import defaultdict
 import csv
+import json
 import datetime
 import os
+import requests
 
 import logging
 logger = logging.getLogger(__name__)
+
+
+ENERGY_CHARTS_URL = "https://api.energy-charts.info"
+
+# TODO: Add dictionary structure and key names. If energy-charts
+#       ever changes its API the query_* functions will have to
+#       learn how to fix up the data
+
+
+# TODO: Add more info reporting for the failure case
+def query_capacity_api():
+    # Documentation at https://api.energy-charts.info/#
+    # Returns a dictionary of a 'time' list and a 'production_types'
+    # dictionary with monthly values for each production type
+    # the times will be once per month
+    r = requests.get(
+        url=ENERGY_CHARTS_URL + "/installed_power",
+        # time_step "monthly" only returns a small subset of the data, for now use yearly data
+        params={"country": "de", "time_step": "yearly"}
+    )
+    data = json.loads(r.content)
+    # data["data_querytime"] = datetime.datetime.now()
+    data['production_types'] = {
+        k['name']: k['data'] for k in data['production_types']
+    }
+    return data
+
+
+# TODO: Add more info reporting for the failure case
+def query_power_api(start=None, end=None):
+    # Documentation at https://api.energy-charts.info/#
+    # Returns a dictionary of a 'unix_seconds' list and a 'production_types'
+    # dictionary with monthly values for each production type
+    # the times will represent 15 minute intervals
+    if isinstance(start, float):
+        start = datetime.datetime.fromtimestamp(start)
+    if isinstance(end, float):
+        end = datetime.datetime.fromtimestamp(end)
+    r = requests.get(
+        url=ENERGY_CHARTS_URL + "/total_power",
+        params={
+            "country": "de",
+            "start": start,
+            "end": end,
+        }
+    )
+    data = json.loads(r.content)
+    print(len(data['production_types']), [d['name'] for d in data['production_types']])
+    data['production_types'] = {
+        k['name']: k['data'] for k in data['production_types']
+    }
+    # data["data_querytime"] = datetime.datetime.now()
+    return data
 
 
 def acquire_data(use_sources, datadir='.'):
