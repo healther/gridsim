@@ -206,6 +206,8 @@ class HistoricData:
 			out_power = []
 			for k in self._keys:
 				out_power += [self._prepared_data['power']['types'][k][i]]
+			if t>self._target_end:
+				return
 			yield t, out_power, out_capacity
 
 	def keys(self):
@@ -234,7 +236,7 @@ def merge(old, new, timekey='time'):
 		# logging.info(insert_idx)
 		if t in old[timekey]:
 			# TODO: Fix implementation, this is reasonably certainly broken!
-			raise NotImplementedError("Fix implementation of error handling")
+			# raise NotImplementedError("Fix implementation of error handling")
 			logging.info(f"{len(old[timekey])} {t} {old[timekey][insert_idx-1]}")
 
 			for k in new_keys:

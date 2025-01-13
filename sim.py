@@ -68,7 +68,10 @@ import datetime
 def main():
 	logging.debug("Bla")
 	logging.warning("Blab")
-	historic_data = history.HistoricData(start=history.datetime.datetime(2022, 1, 1))
+	historic_data = history.HistoricData(
+		start=history.datetime.datetime(2022, 1, 1),
+		end=history.datetime.datetime(2024,12,31)
+	)
 	if historic_data._missing:
 		historic_data.initalize(query_api=True)
 	historic_data.prepare(history.DEFAULT_KEYS)
@@ -85,6 +88,7 @@ def main():
 	if len(renewable_capacity) != len(historic_data.keys()[1])-1:
 		# historic_data also provides the load
 		raise ValueError(f"Wrong number of entries for renewable_capacity {len(renewable_capacity)} {len(historic_data.keys()[1])-1} {historic_data.keys()}")
+	print(historic_data)
 	power_data = grid.simulate(historic_data, renewable_capacity)
 	power_data.finalize()
 	# print(power_data.return_deficits())

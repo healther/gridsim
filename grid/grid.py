@@ -314,7 +314,7 @@ def report_excesses(times, deficits, excesses):
     ax.plot(times, excesses)
     ax.set_xlabel('Time')
     ax.set_ylabel('Capacity MWh')
-    plt.savefig("excesses.pdf")
+    plt.savefig("excesses.png")
 
 
 
@@ -379,7 +379,7 @@ def summarize_deficit(pd):
     ax.set_ylabel('Energy [MWh]')
     ax.legend()
     plt.tight_layout()
-    plt.savefig('test.pdf')
+    plt.savefig('test.png')
 
 
 # @profile
