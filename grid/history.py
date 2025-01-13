@@ -4,9 +4,12 @@ import json
 import requests
 from data import energy_charts
 
+from line_profiler import profile
+
 
 import logging
 log = logging.getLogger(__name__)
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s')
 
 # ['Hydro pumped storage consumption',
 # 'Cross border electricity trading',
@@ -55,7 +58,7 @@ class HistoricData:
 	# pairs where the list correspond to the times from unix_seconds
 	power = {}
 
-	def __init__(self, cache_file="data/historic_data.json", start=datetime.datetime(year=2020, month=1, day=1), end=datetime.datetime.now(), initalize=True):
+	def __init__(self, cache_file="data/historic_data.json", start=datetime.datetime(year=2020, month=1, day=1), end=datetime.datetime.now().replace(hour=0, minute=0, second=0), initalize=True):
 		self.cache_file = cache_file
 		self._missing = True
 		self._target_start = start.timestamp()
@@ -64,6 +67,7 @@ class HistoricData:
 			self.initalize()
 
 	def initalize(self, query_api=False):
+		logging.debug(f"initalize({query_api})")
 		self.load_cache()
 		if self.power:
 			self._current_start = self.power['unix_seconds'][0]
@@ -77,15 +81,21 @@ class HistoricData:
 
 		if query_api:
 			if not self.power:
+				logging.debug("No data yet, just query the api and hope for the best")
 				self.update_data_from_api(self._target_start, self._target_end)
 			elif self._missing:
+				logging.debug("We have some data, but missing some")
 				if self._target_start < self._current_start:
+					logging.debug("  before; from {self._target_start} to {self._current_start}")
 					self.update_data_from_api(self._target_start, self._current_start)
 					self._current_start = self._target_start
 				if self._target_end > self._current_end:
+					logging.debug("  after; from {self._current_end} to {self._target_end}")
 					self.update_data_from_api(self._current_end, self._target_end)
 					self._current_end = self._target_end
 				self._missing = False
+			else:
+				logging.debug("All data available. No need to call out")
 			self.update_cache()
 
 	def update_data_from_api(self, missing_start=None, missing_end=None):
@@ -166,7 +176,7 @@ class HistoricData:
 					new_values = [ov + nv if nv is not None else 0. for ov, nv in zip(old_values, v)]
 					self._prepared_data['power']['types'][new_key][:] = new_values
 
-
+	@profile
 	def __iter__(self):
 		try:
 			self._prepared_data
@@ -218,10 +228,19 @@ def merge(old, new, timekey='time'):
 		raise KeyError(f"Got extra keys: {new_keys - old_keys} in the new data")
 
 	for i, t in enumerate(new[timekey]):
-		insert_idx = bisect.bisect(old[timekey], t)
+		# This needs to be bisect_left, such that in case of equality we get the
+		# index under which we get the result!
+		insert_idx = bisect.bisect_left(old[timekey], t)
+		# logging.info(insert_idx)
 		if t in old[timekey]:
+			# TODO: Fix implementation, this is reasonably certainly broken!
+			raise NotImplementedError("Fix implementation of error handling")
+			logging.info(f"{len(old[timekey])} {t} {old[timekey][insert_idx-1]}")
+
+			for k in new_keys:
+				print(k, {new['production_types'][k][i]})
 			if old[timekey][insert_idx] != new['production_types'][k][i]:
-				log.debug(f"Got different values for {t}. Old: {old[timekey][insert_idx]} New: {new['production_types'][k][i]}. Ignoring new one")
+				logging.info(f"Got different values for {t}. Old: {old[timekey][insert_idx]} New: {new['production_types'][k][i]}. Ignoring new one")
 				continue
 		old[timekey].insert(insert_idx, t)
 		for k in new_keys:
